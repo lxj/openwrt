@@ -6,20 +6,22 @@
 
 适用于 `x86/64 + EFI + ext4 combined image` 的 OpenWrt 安装场景。
 
-## 快速运行
+当前推荐的脚本直链：
 
-请先将下面命令里的 `YOUR_URL` 替换成脚本实际的 CDN 地址。
+`https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh`
+
+## 快速运行
 
 ### 使用 `wget`
 
 ```sh
-wget -O - "YOUR_URL" | sh
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 ```
 
 ### 使用 `curl`
 
 ```sh
-curl -fsSL "YOUR_URL" | sh
+curl -fsSL "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 ```
 
 ## 常用示例
@@ -29,7 +31,7 @@ curl -fsSL "YOUR_URL" | sh
 脚本会自动尝试识别目标盘；如果无法确定，会弹出菜单让你选择。
 
 ```sh
-wget -O - "YOUR_URL" | sh -s -- install
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install
 ```
 
 ### 安装并跳过确认
@@ -37,13 +39,13 @@ wget -O - "YOUR_URL" | sh -s -- install
 适合无人值守场景。该命令只负责写盘，不会自动扩容。
 
 ```sh
-wget -O - "YOUR_URL" | sh -s -- install -y
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -y
 ```
 
 ### 指定目标盘安装
 
 ```sh
-wget -O - "YOUR_URL" | sh -s -- install -d /dev/sdb
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -d /dev/sdb
 ```
 
 ### 单独执行扩容
@@ -51,13 +53,13 @@ wget -O - "YOUR_URL" | sh -s -- install -d /dev/sdb
 请先重启进入目标盘上的 OpenWrt，再执行扩容：
 
 ```sh
-wget -O - "YOUR_URL" | sh -s -- expand
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand
 ```
 
 ### 指定磁盘扩容
 
 ```sh
-wget -O - "YOUR_URL" | sh -s -- expand -d /dev/sda
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand -d /dev/sda
 ```
 
 ## 脚本行为说明
@@ -75,3 +77,4 @@ wget -O - "YOUR_URL" | sh -s -- expand -d /dev/sda
 - 在生产环境执行前，先确认目标设备名是否正确
 - 如果是通过 Live OpenWrt 或 U 盘环境安装，完成后记得拔掉启动介质再重启
 - 推荐流程是：`install` -> 重启进目标盘系统 -> `expand`
+- 当前 README 使用的是第三方大陆加速镜像 `cdn.osyb.cn`，如果后续可用性变化，建议回退到官方 GitHub 或 jsDelivr 地址
