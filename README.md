@@ -28,6 +28,14 @@ curl -fsSL "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | s
 
 ## 常用示例
 
+### 先做环境预检
+
+推荐安装前先执行一次预检，确认当前系统盘、候选目标盘、关键命令和 `grub.cfg` 路径是否正常。
+
+```sh
+wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- check
+```
+
 ### 交互式安装
 
 脚本会自动尝试识别目标盘；如果无法确定，会弹出菜单让你选择。
@@ -66,6 +74,7 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 
 ## 脚本行为说明
 
+- `check` 会输出当前环境预检结果，帮助确认现场条件是否满足
 - `install` 会下载或使用本地镜像，把 OpenWrt 写入目标磁盘
 - `install` 只负责写盘，不会在 Live 环境里直接扩容
 - 重启进入目标盘上的 OpenWrt 后，再执行 `expand`

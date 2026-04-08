@@ -8,10 +8,12 @@ DEFAULT_IMAGE_URL="https://downloads.openwrt.org/releases/25.12.2/targets/x86/64
 usage() {
     cat <<EOF
 用法:
+  $SCRIPT_NAME check   [--grub /boot/grub/grub.cfg]
   $SCRIPT_NAME install [-d /dev/sdX] [-i /path/to/openwrt.img.gz] [-u IMAGE_URL] [--force] [-y]
   $SCRIPT_NAME expand  [-d /dev/sdX] [--part 2] [--grub /boot/grub/grub.cfg] [-y]
 
 说明:
+  check    预检查当前环境、磁盘识别、关键命令和 grub 配置路径。
   install  下载或使用本地镜像，将 OpenWrt 镜像写入目标磁盘。
            未指定 -d 时，会先尝试自动选择唯一的非系统盘，失败后进入菜单选择。
            写盘完成后请重启进入目标盘上的 OpenWrt，再执行 expand。
@@ -20,6 +22,7 @@ usage() {
   -y       跳过交互确认。
 
 示例:
+  $SCRIPT_NAME check
   $SCRIPT_NAME install -d /dev/sdb
   $SCRIPT_NAME install -d /dev/sdb -i /root/openwrt.img.gz
   $SCRIPT_NAME expand -d /dev/sda
@@ -140,6 +143,7 @@ get_cmdline_root_value() {
 
 find_part_by_partuuid() {
     partuuid="$1"
+    command -v blkid >/dev/null 2>&1 || return 1
     blkid | awk -F: -v key="PARTUUID=\"$partuuid\"" 'index($0, key) { print $1; exit }'
 }
 
@@ -401,12 +405,33 @@ write_image() {
     case "$image_path" in
         *.gz)
             require_cmd gzip
+            require_cmd mkfifo
             log "写入压缩镜像到 $target_disk"
-            gzip -dc "$image_path" | dd of="$target_disk" bs=4M conv=fsync status=progress
+            fifo_path="/tmp/openwrt-auto-install.$$.$(basename "$target_disk").fifo"
+            rm -f "$fifo_path"
+            mkfifo "$fifo_path"
+            cleanup_write_fifo() {
+                rm -f "$fifo_path"
+                if [ -n "${gzip_pid:-}" ]; then
+                    kill "$gzip_pid" >/dev/null 2>&1 || true
+                fi
+            }
+            trap cleanup_write_fifo EXIT INT TERM
+            gzip -dc "$image_path" >"$fifo_path" &
+            gzip_pid=$!
+            dd if="$fifo_path" of="$target_disk" bs=4M conv=fsync || {
+                wait "$gzip_pid" >/dev/null 2>&1 || true
+                die "镜像写入失败: $target_disk"
+            }
+            wait "$gzip_pid" || {
+                die "镜像解压失败: $image_path"
+            }
+            trap - EXIT INT TERM
+            cleanup_write_fifo
             ;;
         *)
             log "写入镜像到 $target_disk"
-            dd if="$image_path" of="$target_disk" bs=4M conv=fsync status=progress
+            dd if="$image_path" of="$target_disk" bs=4M conv=fsync
             ;;
     esac
 
@@ -458,6 +483,74 @@ update_grub_partuuid() {
     log "已更新 grub PARTUUID，备份文件: $backup_file"
 }
 
+check_command_status() {
+    cmd_name="$1"
+    if command -v "$cmd_name" >/dev/null 2>&1; then
+        printf '[OK] 命令可用: %s -> %s\n' "$cmd_name" "$(command -v "$cmd_name")"
+    else
+        printf '[WARN] 命令缺失: %s\n' "$cmd_name"
+    fi
+}
+
+run_check() {
+    grub_cfg="/boot/grub/grub.cfg"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --grub)
+                grub_cfg="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                die "check 不支持的参数: $1"
+                ;;
+        esac
+    done
+
+    printf '== OpenWrt 安装环境预检 ==\n'
+    printf '脚本: %s\n' "$SCRIPT_NAME"
+    printf '当前用户: %s (uid=%s)\n' "$(id -un 2>/dev/null || echo unknown)" "$(id -u)"
+    printf 'TTY: '
+    if [ -r /dev/tty ]; then
+        printf '可用\n'
+    else
+        printf '不可用\n'
+    fi
+
+    printf '\n== 基础命令 ==\n'
+    check_command_status wget
+    check_command_status gzip
+    check_command_status dd
+    check_command_status fdisk
+    check_command_status parted
+    check_command_status losetup
+    check_command_status resize2fs
+    check_command_status blkid
+    check_command_status opkg
+
+    printf '\n== 系统识别 ==\n'
+    root_part=$(detect_current_root_part || true)
+    system_disk=$(detect_system_disk || true)
+    auto_install_disk=$(auto_detect_install_disk 2>/dev/null || true)
+    printf '当前根分区: %s\n' "${root_part:-未识别}"
+    printf '当前系统盘: %s\n' "${system_disk:-未识别}"
+    printf '自动识别安装目标盘: %s\n' "${auto_install_disk:-未识别}"
+
+    printf '\n== grub 配置 ==\n'
+    if [ -f "$grub_cfg" ]; then
+        printf '[OK] grub 配置存在: %s\n' "$grub_cfg"
+    else
+        printf '[WARN] grub 配置不存在: %s\n' "$grub_cfg"
+    fi
+
+    printf '\n== 磁盘概览 ==\n'
+    show_disk_table "${system_disk:-}"
+}
+
 expand_disk() {
     target_disk="$1"
     grub_cfg="$2"
@@ -469,6 +562,7 @@ expand_disk() {
     assert_block_device "$target_part"
 
     ensure_tool fdisk fdisk
+    ensure_tool parted parted
     ensure_tool losetup losetup
     ensure_tool resize2fs resize2fs
     ensure_tool blkid blkid
@@ -477,10 +571,8 @@ expand_disk() {
 
     start_sector=$(get_part_start_sector "$target_disk" "$target_part")
     [ -n "$start_sector" ] || die "无法识别 $target_part 的起始扇区"
-    last_sector=$(get_disk_last_sector "$target_disk")
-
     log "准备重建分区表: $target_part"
-    log "起始扇区: $start_sector, 结束扇区: $last_sector"
+    log "起始扇区: $start_sector, 结束位置: 100%"
     log "扩容策略: 第 $partno 分区将使用目标磁盘上的全部剩余空间。"
 
     confirm_or_die "即将扩容磁盘
@@ -489,10 +581,10 @@ expand_disk() {
 grub 配置: $grub_cfg
 当前分区: $(get_disk_partition_overview "$target_disk")
 
-脚本会删除并重建第 $partno 分区，但会保留原有起始扇区和文件系统签名。" "$assume_yes"
+    脚本会删除并重建第 $partno 分区，但会保留原有起始扇区和文件系统签名。" "$assume_yes"
     print_disk_summary "$target_disk"
-    printf 'd\n%s\nn\n%s\n%s\n%s\nn\nw\n' \
-        "$partno" "$partno" "$start_sector" "$last_sector" | fdisk "$target_disk"
+    parted -s -f "$target_disk" unit s rm "$partno"
+    parted -s -f "$target_disk" unit s mkpart primary ext4 "${start_sector}s" 100%
 
     sync
     if command -v blockdev >/dev/null 2>&1; then
@@ -601,6 +693,8 @@ run_expand() {
     partno="2"
     assume_yes=0
 
+    ensure_tool blkid blkid
+
     while [ $# -gt 0 ]; do
         case "$1" in
             -d|--disk)
@@ -654,6 +748,9 @@ main() {
     case "$subcommand" in
         -h|--help|help)
             usage
+            ;;
+        check)
+            run_check "$@"
             ;;
         install)
             require_root
