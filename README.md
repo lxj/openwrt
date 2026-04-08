@@ -38,7 +38,7 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 
 ### 交互式安装
 
-脚本会自动尝试识别目标盘；如果无法确定，会弹出菜单让你选择。
+脚本会先自动做一轮安装预检；通过后再尝试识别目标盘，若无法确定会弹出菜单让你选择。
 
 ```sh
 wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install
@@ -76,6 +76,7 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 
 - `check` 会输出当前环境预检结果，帮助确认现场条件是否满足
 - `install` 会下载或使用本地镜像，把 OpenWrt 写入目标磁盘
+- `install` 在真正写盘前会先自动执行一轮预检
 - `install` 只负责写盘，不会在 Live 环境里直接扩容
 - 重启进入目标盘上的 OpenWrt 后，再执行 `expand`
 - `expand` 会把第 `2` 分区扩到目标磁盘剩余空间上限

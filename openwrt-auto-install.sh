@@ -317,19 +317,35 @@ get_disk_removable() {
 show_disk_table() {
     system_disk="${1:-}"
     index=1
+    output_tty="${2:-1}"
 
-    tty_println '可选磁盘:'
+    if [ "$output_tty" -eq 1 ]; then
+        tty_println '可选磁盘:'
+    else
+        printf '可选磁盘:\n'
+    fi
     for disk in $(list_physical_disks); do
         marker=""
         [ -n "$system_disk" ] && [ "$disk" = "$system_disk" ] && marker=" [当前系统盘]"
-        printf '  %s) %s | %s | removable:%s | model:%s%s\n' \
-            "$index" \
-            "$disk" \
-            "$(get_disk_size_human "$disk")" \
-            "$(get_disk_removable "$disk")" \
-            "$(get_disk_model "$disk")" \
-            "$marker" >/dev/tty
-        printf '     parts: %s\n' "$(get_disk_partition_overview "$disk")" >/dev/tty
+        if [ "$output_tty" -eq 1 ]; then
+            printf '  %s) %s | %s | removable:%s | model:%s%s\n' \
+                "$index" \
+                "$disk" \
+                "$(get_disk_size_human "$disk")" \
+                "$(get_disk_removable "$disk")" \
+                "$(get_disk_model "$disk")" \
+                "$marker" >/dev/tty
+            printf '     parts: %s\n' "$(get_disk_partition_overview "$disk")" >/dev/tty
+        else
+            printf '  %s) %s | %s | removable:%s | model:%s%s\n' \
+                "$index" \
+                "$disk" \
+                "$(get_disk_size_human "$disk")" \
+                "$(get_disk_removable "$disk")" \
+                "$(get_disk_model "$disk")" \
+                "$marker"
+            printf '     parts: %s\n' "$(get_disk_partition_overview "$disk")"
+        fi
         index=$((index + 1))
     done
 }
@@ -492,6 +508,82 @@ check_command_status() {
     fi
 }
 
+require_or_report() {
+    cmd_name="$1"
+    if command -v "$cmd_name" >/dev/null 2>&1; then
+        printf '[OK] 命令可用: %s -> %s\n' "$cmd_name" "$(command -v "$cmd_name")"
+        return 0
+    fi
+    printf '[FAIL] 缺少命令: %s\n' "$cmd_name"
+    return 1
+}
+
+run_install_precheck() {
+    target_disk="$1"
+    image_path="$2"
+    image_source="$3"
+    image_url="$4"
+    assume_yes="$5"
+    system_disk="$6"
+    ok=1
+
+    printf '== install 预检 ==\n'
+    printf '目标磁盘: %s\n' "$target_disk"
+    printf '当前系统盘: %s\n' "${system_disk:-未识别}"
+    if [ "$image_source" = "local" ]; then
+        printf '镜像文件: %s\n' "$image_path"
+    else
+        printf '镜像文件: 将下载 %s\n' "$image_url"
+    fi
+
+    if [ "$assume_yes" -ne 1 ]; then
+        if [ -r /dev/tty ]; then
+            printf '[OK] 交互终端可用: /dev/tty\n'
+        else
+            printf '[FAIL] 交互终端不可用，当前模式无法确认写盘操作\n'
+            ok=0
+        fi
+    fi
+
+    require_or_report dd || ok=0
+
+    if [ "$image_source" = "download" ]; then
+        require_or_report wget || ok=0
+        case "$image_url" in
+            *.gz)
+                require_or_report gzip || ok=0
+                ;;
+        esac
+    else
+        if [ -f "$image_path" ]; then
+            printf '[OK] 镜像文件存在: %s\n' "$image_path"
+        else
+            printf '[FAIL] 镜像文件不存在: %s\n' "$image_path"
+            ok=0
+        fi
+        case "$image_path" in
+            *.gz)
+                require_or_report gzip || ok=0
+                ;;
+        esac
+    fi
+
+    if [ -b "$target_disk" ]; then
+        printf '[OK] 目标磁盘存在: %s\n' "$target_disk"
+    else
+        printf '[FAIL] 目标磁盘不存在: %s\n' "$target_disk"
+        ok=0
+    fi
+
+    if [ "$ok" -eq 1 ]; then
+        printf '[OK] install 预检通过\n'
+        return 0
+    fi
+
+    printf '[FAIL] install 预检未通过，请先修复以上问题\n'
+    return 1
+}
+
 run_check() {
     grub_cfg="/boot/grub/grub.cfg"
 
@@ -548,7 +640,11 @@ run_check() {
     fi
 
     printf '\n== 磁盘概览 ==\n'
-    show_disk_table "${system_disk:-}"
+    if [ -r /dev/tty ]; then
+        show_disk_table "${system_disk:-}" 1
+    else
+        show_disk_table "${system_disk:-}" 0
+    fi
 }
 
 expand_disk() {
@@ -620,6 +716,7 @@ run_install() {
     force_write=0
     assume_yes=0
     system_disk=$(detect_system_disk || true)
+    image_source="download"
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -629,6 +726,7 @@ run_install() {
                 ;;
             -i|--image)
                 image_path="$2"
+                image_source="local"
                 shift 2
                 ;;
             -u|--url)
@@ -670,9 +768,14 @@ run_install() {
     if [ -z "$image_path" ]; then
         image_name=$(basename "$image_url")
         image_path="/tmp/$image_name"
-        download_image "$image_url" "$image_path"
     else
         [ -f "$image_path" ] || die "镜像文件不存在: $image_path"
+    fi
+
+    run_install_precheck "$target_disk" "$image_path" "$image_source" "$image_url" "$assume_yes" "$system_disk" || exit 1
+
+    if [ ! -f "$image_path" ]; then
+        download_image "$image_url" "$image_path"
     fi
 
     confirm_or_die "即将把镜像写入 $target_disk
