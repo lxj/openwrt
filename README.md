@@ -12,6 +12,8 @@
 
 ## 快速运行
 
+脚本已经适配远程管道执行场景；即使使用 `curl | sh` 或 `wget | sh`，交互确认和菜单选盘也会直接从当前终端读取。
+
 ### 使用 `wget`
 
 ```sh
@@ -74,6 +76,7 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 ## 建议
 
 - 首次使用建议不要加 `-y`，先走交互模式确认磁盘选择
+- 远程执行支持交互模式，例如 `curl ... | sh -s -- install`
 - 在生产环境执行前，先确认目标设备名是否正确
 - 如果是通过 Live OpenWrt 或 U 盘环境安装，完成后记得拔掉启动介质再重启
 - 推荐流程是：`install` -> 重启进目标盘系统 -> `expand`

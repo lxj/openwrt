@@ -39,6 +39,24 @@ die() {
     exit 1
 }
 
+require_tty() {
+    [ -r /dev/tty ] || die "当前没有可交互终端。远程执行时请确保在终端中运行，或使用 -y 并显式传入参数。"
+}
+
+tty_print() {
+    printf '%s' "$*" >/dev/tty
+}
+
+tty_println() {
+    printf '%s\n' "$*" >/dev/tty
+}
+
+tty_read() {
+    var_name="$1"
+    require_tty
+    IFS= read -r "$var_name" </dev/tty
+}
+
 require_root() {
     [ "$(id -u)" -eq 0 ] || die "请使用 root 运行该脚本。"
 }
@@ -210,9 +228,9 @@ confirm_or_die() {
         return 0
     fi
 
-    printf '%s\n' "$message"
-    printf '输入 YES 继续: '
-    read -r answer
+    tty_println "$message"
+    tty_print '输入 YES 继续: '
+    tty_read answer
     [ "$answer" = "YES" ] || die "已取消操作。"
 }
 
@@ -296,7 +314,7 @@ show_disk_table() {
     system_disk="${1:-}"
     index=1
 
-    printf '可选磁盘:\n'
+    tty_println '可选磁盘:'
     for disk in $(list_physical_disks); do
         marker=""
         [ -n "$system_disk" ] && [ "$disk" = "$system_disk" ] && marker=" [当前系统盘]"
@@ -306,8 +324,8 @@ show_disk_table() {
             "$(get_disk_size_human "$disk")" \
             "$(get_disk_removable "$disk")" \
             "$(get_disk_model "$disk")" \
-            "$marker"
-        printf '     parts: %s\n' "$(get_disk_partition_overview "$disk")"
+            "$marker" >/dev/tty
+        printf '     parts: %s\n' "$(get_disk_partition_overview "$disk")" >/dev/tty
         index=$((index + 1))
     done
 }
@@ -325,8 +343,8 @@ pick_disk_from_menu() {
 
     while :; do
         show_disk_table "$system_disk"
-        printf '%s' "$prompt"
-        read -r selection
+        tty_print "$prompt"
+        tty_read selection
 
         case "$selection" in
             ''|*[!0-9]*)
