@@ -314,6 +314,27 @@ get_disk_removable() {
     fi
 }
 
+print_disk_brief() {
+    disk="$1"
+    system_disk="${2:-}"
+    marker=""
+    [ -n "$system_disk" ] && [ "$disk" = "$system_disk" ] && marker=" [当前系统盘]"
+    printf '%s | %s | removable:%s | model:%s%s\n' \
+        "$disk" \
+        "$(get_disk_size_human "$disk")" \
+        "$(get_disk_removable "$disk")" \
+        "$(get_disk_model "$disk")" \
+        "$marker"
+    printf 'parts: %s\n' "$(get_disk_partition_overview "$disk")"
+}
+
+print_all_disks_brief() {
+    system_disk="${1:-}"
+    for disk in $(list_physical_disks); do
+        print_disk_brief "$disk" "$system_disk"
+    done
+}
+
 show_disk_table() {
     system_disk="${1:-}"
     index=1
@@ -781,7 +802,11 @@ run_install() {
     confirm_or_die "即将把镜像写入 $target_disk
 镜像文件: $image_path
 当前系统盘: ${system_disk:-未知}
-当前分区: $(get_disk_partition_overview "$target_disk")
+目标盘摘要:
+$(print_disk_brief "$target_disk" "$system_disk")
+
+当前可见磁盘:
+$(print_all_disks_brief "$system_disk")
 
 警告: 该操作会清空目标磁盘上的现有数据。" "$assume_yes"
     print_disk_summary "$target_disk"
