@@ -19,6 +19,7 @@ usage() {
            写盘完成后请重启进入目标盘上的 OpenWrt，再执行 expand。
   expand   在首次启动到 OpenWrt 后，将第 2 分区扩展到整盘并同步更新 grub.cfg。
            未指定 -d 时，会尝试自动识别当前启动的系统盘，失败后进入菜单选择。
+           如果目标就是当前系统盘，会登记下次重启后自动完成文件系统扩容。
   -y       跳过交互确认。
 
 示例:
@@ -76,10 +77,18 @@ ensure_tool() {
         return 0
     fi
 
-    command -v opkg >/dev/null 2>&1 || die "缺少命令 $tool_name，且当前系统没有 opkg 可自动安装。"
-    log "未找到 $tool_name，尝试通过 opkg 安装 $pkg_name"
-    opkg update
-    opkg install "$pkg_name"
+    if command -v apk >/dev/null 2>&1; then
+        log "未找到 $tool_name，尝试通过 apk 安装 $pkg_name"
+        apk update
+        apk add "$pkg_name"
+    elif command -v opkg >/dev/null 2>&1; then
+        log "未找到 $tool_name，尝试通过 opkg 安装 $pkg_name"
+        opkg update
+        opkg install "$pkg_name"
+    else
+        die "缺少命令 $tool_name，且当前系统没有 apk/opkg 可自动安装。"
+    fi
+
     command -v "$tool_name" >/dev/null 2>&1 || die "已尝试安装 $pkg_name，但仍未找到命令 $tool_name"
 }
 
@@ -520,6 +529,69 @@ update_grub_partuuid() {
     log "已更新 grub PARTUUID，备份文件: $backup_file"
 }
 
+install_resize2fs_package() {
+    if command -v resize2fs >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v apk >/dev/null 2>&1; then
+        apk update
+        apk add resize2fs
+    elif command -v opkg >/dev/null 2>&1; then
+        opkg update
+        opkg install resize2fs
+    else
+        return 1
+    fi
+
+    command -v resize2fs >/dev/null 2>&1
+}
+
+schedule_next_boot_resize() {
+    target_part="$1"
+    script_path="/etc/uci-defaults/99-rootfs-resize"
+
+    [ -d /etc/uci-defaults ] || die "未找到 /etc/uci-defaults，无法登记下次启动自动扩容。"
+
+    cat >"$script_path" <<EOF
+#!/bin/sh
+if ! command -v resize2fs >/dev/null 2>&1; then
+    if command -v apk >/dev/null 2>&1; then
+        apk update && apk add resize2fs || exit 1
+    elif command -v opkg >/dev/null 2>&1; then
+        opkg update && opkg install resize2fs || exit 1
+    else
+        exit 1
+    fi
+fi
+resize2fs -f "$target_part" || exit 1
+exit 0
+EOF
+    chmod +x "$script_path"
+    log "已登记下次启动自动扩容脚本: $script_path"
+}
+
+run_parted_resizepart() {
+    target_disk="$1"
+    partno="$2"
+    resize_output_file="/tmp/openwrt-expand-parted.$$"
+
+    if parted -s -f "$target_disk" unit s resizepart "$partno" 100% >"$resize_output_file" 2>&1; then
+        rm -f "$resize_output_file"
+        return 0
+    fi
+
+    if grep -q "unable to inform the kernel of the change" "$resize_output_file"; then
+        cat "$resize_output_file" >&2
+        rm -f "$resize_output_file"
+        return 0
+    fi
+
+    cat "$resize_output_file" >&2
+    rm -f "$resize_output_file"
+    return 1
+}
+
 check_command_status() {
     cmd_name="$1"
     if command -v "$cmd_name" >/dev/null 2>&1; then
@@ -640,9 +712,8 @@ run_check() {
     check_command_status dd
     check_command_status fdisk
     check_command_status parted
-    check_command_status losetup
     check_command_status resize2fs
-    check_command_status blkid
+    check_command_status apk
     check_command_status opkg
 
     printf '\n== 系统识别 ==\n'
@@ -680,9 +751,7 @@ expand_disk() {
 
     ensure_tool fdisk fdisk
     ensure_tool parted parted
-    ensure_tool losetup losetup
     ensure_tool resize2fs resize2fs
-    ensure_tool blkid blkid
     require_cmd sed
     require_cmd awk
 
@@ -698,10 +767,17 @@ expand_disk() {
 grub 配置: $grub_cfg
 当前分区: $(get_disk_partition_overview "$target_disk")
 
-    脚本会删除并重建第 $partno 分区，但会保留原有起始扇区和文件系统签名。" "$assume_yes"
+    脚本会把第 $partno 分区扩展到磁盘尾部，并保留现有分区 GUID 与文件系统签名。" "$assume_yes"
     print_disk_summary "$target_disk"
-    parted -s -f "$target_disk" unit s rm "$partno"
-    parted -s -f "$target_disk" unit s mkpart primary ext4 "${start_sector}s" 100%
+    run_parted_resizepart "$target_disk" "$partno" || die "分区扩展失败: $target_part"
+
+    current_system_disk=$(detect_system_disk || true)
+    if [ -n "$current_system_disk" ] && [ "$target_disk" = "$current_system_disk" ]; then
+        schedule_next_boot_resize "$target_part"
+        log "当前是在系统盘在线扩容，内核不会立即刷新分区大小。"
+        log "请现在执行 reboot；重启后系统会自动运行 resize2fs 完成文件系统扩容。"
+        return 0
+    fi
 
     sync
     if command -v blockdev >/dev/null 2>&1; then
@@ -712,20 +788,7 @@ grub 配置: $grub_cfg
     fi
     sleep 2
 
-    loopdev=$(find_free_loop) || die "未找到可用的 loop 设备"
-    log "使用循环设备: $loopdev"
-
-    losetup "$loopdev" "$target_part"
-    trap 'losetup -d "$loopdev" >/dev/null 2>&1 || true' EXIT INT TERM
-
-    resize2fs -f "$loopdev"
-
-    new_partuuid=$(blkid -s PARTUUID -o value "$target_part")
-    [ -n "$new_partuuid" ] || die "无法读取 $target_part 的 PARTUUID"
-    update_grub_partuuid "$grub_cfg" "$new_partuuid"
-
-    losetup -d "$loopdev"
-    trap - EXIT INT TERM
+    resize2fs -f "$target_part"
 
     log "expand 步骤完成。分区已扩至目标磁盘剩余空间上限。"
 }
@@ -820,8 +883,6 @@ run_expand() {
     grub_cfg="/boot/grub/grub.cfg"
     partno="2"
     assume_yes=0
-
-    ensure_tool blkid blkid
 
     while [ $# -gt 0 ]; do
         case "$1" in
