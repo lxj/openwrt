@@ -21,13 +21,13 @@
 ### 使用 `wget`
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 ```
 
 ### 使用 `curl`
 
 ```sh
-curl -fsSL "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
+curl -fsSL "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 ```
 
 ## 常用示例
@@ -37,7 +37,7 @@ curl -fsSL "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | s
 推荐安装前先执行一次预检，确认当前系统盘、候选目标盘、关键命令和 `grub.cfg` 路径是否正常。
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- check
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- check
 ```
 
 ### 交互式安装
@@ -45,7 +45,7 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 脚本会先自动做一轮安装预检；通过后再尝试识别目标盘，若无法确定会弹出菜单让你选择。
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install
 ```
 
 ### 安装并跳过确认
@@ -53,13 +53,13 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 适合无人值守场景。该命令只负责写盘，不会自动扩容。
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -y
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -y
 ```
 
 ### 指定目标盘安装
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -d /dev/sdb
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- install -d /dev/sdb
 ```
 
 ### 单独执行扩容
@@ -67,13 +67,13 @@ wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh
 请先重启进入目标盘上的 OpenWrt，再执行扩容：
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand
 ```
 
 ### 指定磁盘扩容
 
 ```sh
-wget -O - "https://cdn.osyb.cn/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand -d /dev/sda
+wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh" | sh -s -- expand -d /dev/sda
 ```
 
 ## 镜像类型说明
