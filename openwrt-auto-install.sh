@@ -507,6 +507,10 @@ get_part_start_sector() {
     fdisk -l "$1" | awk '$1 == "'"$2"'" { print $2; exit }'
 }
 
+get_part_end_sector() {
+    fdisk -l "$1" | awk '$1 == "'"$2"'" { print $3; exit }'
+}
+
 get_disk_last_sector() {
     disk_name=$(basename "$1")
     sys_size="/sys/class/block/$disk_name/size"
@@ -580,6 +584,13 @@ run_fdisk_expand_partition() {
             rm -f "$run_log"
             return 1
         }
+    fi
+
+    actual_end=$(get_part_end_sector "$target_disk" "$target_part")
+    if [ "$actual_end" != "$last_sector" ]; then
+        cat "$run_log" >&2
+        rm -f "$run_log"
+        return 1
     fi
 
     rm -f "$run_log"
