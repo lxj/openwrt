@@ -857,7 +857,7 @@ run_install() {
 
     if [ -z "$image_path" ]; then
         image_name=$(basename "$image_url")
-        image_path="/tmp/$image_name"
+        image_path="/root/$image_name"
     else
         [ -f "$image_path" ] || die "镜像文件不存在: $image_path"
     fi
