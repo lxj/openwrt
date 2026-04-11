@@ -557,34 +557,16 @@ run_fdisk_expand_partition() {
     start_sector="$3"
     last_sector="$4"
     run_log="/tmp/openwrt-expand-fdisk-run.$$"
-    existing_type=""
     target_part=$(part_path "$target_disk" "$partno")
-    if command -v blkid >/dev/null 2>&1; then
-        existing_type=$(blkid -s TYPE -o value "$target_part" 2>/dev/null || true)
-    fi
-
-    if [ -n "$existing_type" ]; then
-        {
-            printf 'd\n%s\n' "$partno"
-            printf 'n\n%s\n%s\n%s\n' "$partno" "$start_sector" "$last_sector"
-            printf 'n\n'
-            printf 'w\n'
-        } | fdisk "$target_disk" >"$run_log" 2>&1 || {
-            cat "$run_log" >&2
-            rm -f "$run_log"
-            return 1
-        }
-    else
-        {
-            printf 'd\n%s\n' "$partno"
-            printf 'n\n%s\n%s\n%s\n' "$partno" "$start_sector" "$last_sector"
-            printf 'w\n'
-        } | fdisk "$target_disk" >"$run_log" 2>&1 || {
-            cat "$run_log" >&2
-            rm -f "$run_log"
-            return 1
-        }
-    fi
+    {
+        printf 'd\n%s\n' "$partno"
+        printf 'n\n%s\n%s\n%s\n' "$partno" "$start_sector" "$last_sector"
+        printf 'w\n'
+    } | fdisk --wipe-partitions never "$target_disk" >"$run_log" 2>&1 || {
+        cat "$run_log" >&2
+        rm -f "$run_log"
+        return 1
+    }
 
     actual_end=$(get_part_end_sector "$target_disk" "$target_part")
     if [ "$actual_end" != "$last_sector" ]; then
