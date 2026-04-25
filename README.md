@@ -170,3 +170,87 @@ wget -O - "https://cdn.jsdelivr.net/gh/lxj/openwrt@main/openwrt-auto-install.sh"
 - 如果是通过 Live OpenWrt 或 U 盘环境安装，完成后记得拔掉启动介质再重启
 - 推荐流程是：`install` -> 重启进目标盘系统 -> `expand`
 - 当前 README 使用的是第三方大陆加速镜像 `cdn.osyb.cn`，如果后续可用性变化，建议回退到官方 GitHub 或 jsDelivr 地址
+
+## 镜像备份与恢复（可启动）
+
+仓库已提供：
+
+- `backup.sh`：一键生成可恢复镜像 + 虚拟机镜像
+- `restore.sh`：一键恢复到物理磁盘，并做启动一致性修复
+
+### 1. 一键备份
+
+在 OpenWrt 或 Linux 环境执行：
+
+```sh
+chmod +x backup.sh restore.sh
+./backup.sh -d /dev/sda -n openwrt
+```
+
+默认输出：
+
+- `$HOME/backup/openwrt.img.gz`：用于物理机恢复
+- `$HOME/backup/openwrt.qcow2`：用于 QEMU/KVM 直接启动
+- `$HOME/backup/openwrt.meta`：恢复时容量校验与分区参数
+- `$HOME/backup/partition.gpt`：GPT 分区表备份
+- `$HOME/backup/mbr.img`：前 1MiB 引导区备份
+
+说明：
+
+- 自动根据“最后一个分区结束扇区”裁剪镜像大小
+- 自动附加 buffer（默认 1GiB），无需手算 `dd count`
+- 默认尝试对 ext4 根分区做离线 shrink，提高小盘恢复成功率
+- 自动识别 EFI 分区号并写入 `meta`（识别失败回退到 `1`）
+- 缺失依赖时会自动安装（优先使用 `apk`）
+- 可选参数：`--root-part-num 2`、`--efi-part-num N`、`--shrink-margin-mib 256`、`--no-shrink-ext4`
+
+### 2. 一键恢复到物理机
+
+```sh
+./restore.sh -d /dev/sda -i "$HOME/backup/openwrt.img.gz"
+```
+
+恢复脚本默认会执行：
+
+- 写盘：`gunzip | dd`
+- GPT 修复：`sgdisk -e`
+- 同步 `/boot/grub/grub.cfg` 的 `root=PARTUUID=...`
+- UEFI fallback 修复：补全 `EFI/BOOT/BOOTX64.EFI`（若缺失）
+- 若存在 `grub-install`，尝试重装引导（UEFI 或 BIOS）
+- 自动执行恢复后自检（GPT、根分区、grub.cfg、EFI 启动文件）
+- 自检末尾输出汇总：`PASS/WARN/FAIL`
+- 缺失依赖时会自动安装（优先使用 `apk`）
+- 默认自动识别 EFI 分区号（识别失败回退到 `1`）
+- 若元数据缺失，会跳过容量预检；若有元数据，空间不足会直接终止安装
+
+这能显著提升“整盘恢复后目标硬盘可直接启动”的成功率。
+
+可选参数：
+
+- `--self-check-only`：只执行自检，不写盘
+- `--no-self-check`：恢复完成后跳过自检
+- `--no-repair-boot`：写盘后不做引导修复
+- `--root-part-num N`：手动指定根分区号
+- `--efi-part-num N`：手动指定 EFI 分区号
+
+### 3. 虚拟机启动
+
+```sh
+qemu-system-x86_64 \
+  -m 512 \
+  -drive file=openwrt.qcow2,format=qcow2 \
+  -net nic -net user \
+  -nographic
+```
+
+如需 VMware / VirtualBox，可先转 `vmdk`：
+
+```sh
+qemu-img convert -O vmdk openwrt.qcow2 openwrt.vmdk
+```
+
+### 4. 启动模式注意事项
+
+- 源盘是 `UEFI`，目标机器也应以 `UEFI` 启动
+- 源盘是 `Legacy BIOS`，目标机器也应以 `Legacy BIOS` 启动
+- 启动模式不一致时，即使分区数据恢复成功，也可能无法引导
